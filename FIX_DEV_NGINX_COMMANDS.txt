@@ -1,0 +1,59 @@
+# ===========================================
+# DIRECT COMMANDS TO FIX DEV NGINX STATIC FILES
+# Run these commands on your server
+# ===========================================
+
+# 1. Navigate to project directory
+cd /var/www/wayak-dev
+
+# 2. Backup current nginx config
+cp docker/nginx/default.conf docker/nginx/default.conf.backup
+
+# 3. Update nginx config (copy and paste the entire command)
+cat > docker/nginx/default.conf << 'EOF'
+server {
+    listen 80;
+    server_name _;
+    root /var/www/html/public;
+    index index.php;
+    
+    client_max_body_size 100M;
+    
+    # Static files (CSS, JS, Images, Fonts) - Serve directly without PHP processing
+    # This MUST come before location / to handle static files correctly
+    location ~* \.(?:css|js|png|jpg|jpeg|gif|ico|svg|woff2?|eot|ttf|otf|mp4|webp|json|xml)$ {
+        root /var/www/html/public;
+        try_files $uri =404;
+        access_log off;
+        log_not_found off;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+    
+    location ~ \.php$ {
+        fastcgi_pass app:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+    
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+}
+EOF
+
+# 4. Restart nginx container
+docker restart wayak_nginx_dev
+
+# 5. Test (optional - check nginx logs)
+docker logs wayak_nginx_dev
+
+# ===========================================
+# DONE! Static files should now work.
+# ===========================================
+

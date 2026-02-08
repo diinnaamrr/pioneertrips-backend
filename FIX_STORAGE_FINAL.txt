@@ -1,0 +1,102 @@
+# ===========================================
+# FINAL FIX FOR /storage/app/public/ 404 ERRORS
+# Run these commands on your server: /var/www/wayak-dev
+# ===========================================
+
+# 1. Enter the container and create/verify storage symlink
+docker exec -it wayak_app_dev sh -c "php artisan storage:link"
+
+# 2. Verify symlink exists
+docker exec wayak_app_dev ls -la /var/www/html/public/storage
+
+# 3. Check if files exist in storage
+docker exec wayak_app_dev ls -la /var/www/html/storage/app/public/business/ | head -5
+
+# ===========================================
+# If symlink exists, nginx should serve /storage/... automatically
+# because root is /var/www/html/public and symlink points to storage/app/public
+# ===========================================
+
+# 4. Restart nginx to ensure config is loaded
+docker restart wayak_nginx_dev
+
+# ===========================================
+# ALTERNATIVE: If Laravel code uses /storage/app/public/ in URLs
+# (which is incorrect but we need to handle it), update nginx config:
+# ===========================================
+
+cd /var/www/wayak-dev
+
+# Backup
+cp docker/nginx/default.conf docker/nginx/default.conf.backup2
+
+# Update storage location to handle /storage/app/public/
+cat > docker/nginx/default.conf << 'EOF'
+server {
+    listen 80;
+    server_name _;
+    root /var/www/html/public;
+    index index.php;
+    
+    client_max_body_size 100M;
+    
+    # Handle /storage/app/public/... (if Laravel generates this path incorrectly)
+    location ^~ /storage/app/public/ {
+        alias /var/www/html/storage/app/public/;
+        try_files $uri =404;
+        access_log off;
+        log_not_found off;
+        expires 30d;
+    }
+    
+    # Handle /storage/... (standard Laravel path with symlink)
+    location ^~ /storage/ {
+        alias /var/www/html/storage/app/public/;
+        try_files $uri =404;
+        access_log off;
+        log_not_found off;
+        expires 30d;
+    }
+    
+    # Serve files referenced with asset('public/...') correctly
+    location ^~ /public/ {
+        alias /var/www/html/public/;
+        try_files $uri $uri/ =404;
+        access_log off;
+        log_not_found off;
+        expires 30d;
+    }
+    
+    # Static files (CSS, JS, Images, Fonts)
+    location ~* \.(?:css|js|png|jpg|jpeg|gif|ico|svg|woff2?|eot|ttf|otf|mp4|webp|json|xml)$ {
+        root /var/www/html/public;
+        try_files $uri =404;
+        access_log off;
+        log_not_found off;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+    
+    location ~ \.php$ {
+        fastcgi_pass app:9000;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+    
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+}
+EOF
+
+docker restart wayak_nginx_dev
+
+echo ""
+echo "✅ Done! Storage files should now work."
+echo "📝 Test: https://devwayak.duckdns.org/storage/app/public/business/..."
+

@@ -1,0 +1,245 @@
+<?php
+
+namespace Modules\AdminModule\Http\Controllers;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\View\View;
+use App\Models\User;
+use Modules\AdminModule\Service\Interface\AdminNotificationServiceInterface;
+use Illuminate\Support\Facades\Log;
+
+class SendNotificationController extends Controller
+{
+    protected $adminNotificationService;
+
+    public function __construct(AdminNotificationServiceInterface $adminNotificationService)
+    {
+        $this->adminNotificationService = $adminNotificationService;
+    }
+
+    /**
+     * Show the form for sending notifications
+     */
+    public function create(): View
+    {
+        return view('adminmodule::send-notification.create');
+    }
+
+    /**
+     * Get users based on user_type (AJAX)
+     */
+    public function getUsersByType(Request $request)
+    {
+        try {
+            $request->validate([
+                'user_type' => 'required|in:driver,customer'
+            ]);
+
+            $users = User::select('id', 'full_name', 'first_name', 'last_name', 'email', 'phone', 'user_type', 'fcm_token')
+                        ->where('user_type', $request->user_type)
+                        ->where('is_active', 1)
+                        ->whereNull('deleted_at')
+                        ->orderBy('full_name')
+                        ->get();
+
+            // Handle cases where full_name might be null
+            $users = $users->map(function($user) {
+                if (empty($user->full_name)) {
+                    $user->full_name = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''));
+                    if (empty($user->full_name)) {
+                        $user->full_name = 'User ID: ' . $user->id;
+                    }
+                }
+                return $user;
+            });
+
+            return response()->json([
+                'success' => true,
+                'users' => $users,
+                'count' => $users->count(),
+                'message' => 'Users loaded successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error loading users: ' . $e->getMessage(),
+                'users' => [],
+                'count' => 0
+            ]);
+        }
+    }
+
+    /**
+     * Send notification to selected users with chunking to prevent 500 errors
+     */
+    public function store(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'user_type' => 'required|in:driver,customer',
+            'recipient_type' => 'required|in:all,selected',
+            'user_ids' => 'required_if:recipient_type,selected|array',
+            'user_ids.*' => 'exists:users,id',
+            'title' => 'required|string|max:255',
+            'body' => 'required|string|max:1000',
+        ], [
+            'user_type.required' => 'Please select user type (Driver or Customer)',
+            'recipient_type.required' => 'Please select who to send notification to',
+            'user_ids.required_if' => 'Please select at least one user',
+            'title.required' => 'Please enter notification title',
+            'body.required' => 'Please enter notification message',
+        ]);
+
+        try {
+            $currentDateTime = now(); // Current UTC time
+            
+            // Base notification data for database
+            $baseData = [
+                'title' => $request->title,
+                'message' => $request->body,
+                'sender_id' => auth()->id(), // yassin287's ID
+                'sender_name' => 'yassin287',
+                'sender_email' => 'yassin287@drivoeg.com',
+                'type' => 'general',
+                'priority' => 'medium',
+                'is_seen' => 0,
+                'is_read' => 0,
+                'sent_at' => $currentDateTime,
+                'created_at' => $currentDateTime,
+                'updated_at' => $currentDateTime,
+                'model' => 'App\\Models\\User',
+                'delivery_status' => 'sent',
+                'recipient_type' => 'individual',
+            ];
+
+            $sentCount = 0;
+            $pushSentCount = 0;
+
+            if ($request->recipient_type === 'all') {
+                // Send to all users of selected type using CHUNKING to prevent 500 errors
+                Log::info("Starting bulk notification to all {$request->user_type}s using chunking method");
+                
+                // Process users in chunks to avoid memory issues and timeout
+                $chunkSize = 50; // Process 50 users at a time
+                
+                User::where('user_type', $request->user_type)
+                   ->where('is_active', 1)
+                   ->whereNull('deleted_at')
+                   ->chunk($chunkSize, function ($users) use ($baseData, $request, &$sentCount, &$pushSentCount) {
+                       
+                       Log::info("Processing chunk of " . $users->count() . " users");
+                       
+                       foreach ($users as $user) {
+                           try {
+                               $fullName = $user->full_name ?: trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''));
+                               if (empty($fullName)) {
+                                   $fullName = 'User ID: ' . $user->id;
+                               }
+                               
+                               // Save notification to database
+                               $notificationData = array_merge($baseData, [
+                                   'recipient_id' => $user->id,
+                                   'recipient_name' => $fullName,
+                                   'recipient_email' => $user->email ?? '',
+                                   'model_id' => $user->id,
+                               ]);
+
+                               $this->adminNotificationService->send($notificationData);
+                               $sentCount++;
+
+                               // Send push notification to mobile using existing function
+                               if ($user->fcm_token) {
+                                   try {
+                                       sendDeviceNotification(
+                                           fcm_token: $user->fcm_token,
+                                           title: $request->title,
+                                           description: $request->body,
+                                           status: 'active',
+                                           ride_request_id: null,
+                                           type: 'admin_notification',
+                                           action: 'admin_message',
+                                           user_id: $user->id
+                                       );
+                                       $pushSentCount++;
+                                       
+                                       Log::info("Push notification sent to user {$user->id}");
+                                   } catch (\Exception $pushError) {
+                                       Log::error("Failed to send push notification to user {$user->id}: " . $pushError->getMessage());
+                                       // Continue with next user
+                                   }
+                               } else {
+                                   Log::info("User {$user->id} has no FCM token, skipping push notification");
+                               }
+                               
+                           } catch (\Exception $userError) {
+                               Log::error("Failed to process user {$user->id}: " . $userError->getMessage());
+                               // Continue with next user
+                           }
+                       }
+                       
+                       Log::info("Chunk processed. Total processed so far: {$sentCount}, Push notifications: {$pushSentCount}");
+                   });
+
+                $userTypeText = ucfirst($request->user_type) . 's';
+                $message = "Notification sent successfully to {$sentCount} {$userTypeText}! Push notifications sent to {$pushSentCount} devices.";
+                
+                Log::info("Bulk notification completed. Total users: {$sentCount}, Push notifications: {$pushSentCount}");
+                
+            } else {
+                // Send to selected users (this part remains the same)
+                foreach ($request->user_ids as $userId) {
+                    $user = User::find($userId);
+                    if ($user) {
+                        $fullName = $user->full_name ?: trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''));
+                        if (empty($fullName)) {
+                            $fullName = 'User ID: ' . $user->id;
+                        }
+                        
+                        // Save notification to database
+                        $notificationData = array_merge($baseData, [
+                            'recipient_id' => $user->id,
+                            'recipient_name' => $fullName,
+                            'recipient_email' => $user->email ?? '',
+                            'model_id' => $user->id,
+                        ]);
+
+                        $this->adminNotificationService->send($notificationData);
+                        $sentCount++;
+
+                        // Send push notification to mobile using existing function
+                        if ($user->fcm_token) {
+                            try {
+                                sendDeviceNotification(
+                                    fcm_token: $user->fcm_token,
+                                    title: $request->title,
+                                    description: $request->body,
+                                    status: 'active',
+                                    ride_request_id: null,
+                                    type: 'admin_notification',
+                                    action: 'admin_message',
+                                    user_id: $user->id
+                                );
+                                $pushSentCount++;
+                            } catch (\Exception $pushError) {
+                                \Log::error("Failed to send push notification to user {$user->id}: " . $pushError->getMessage());
+                            }
+                        }
+                    }
+                }
+
+                $message = "Notification sent successfully to {$sentCount} selected user(s)! Push notifications sent to {$pushSentCount} devices.";
+            }
+
+            return redirect()->route('admin.send-notification.create')
+                ->with('success', $message);
+
+        } catch (\Exception $e) {
+            Log::error('Notification send error: ' . $e->getMessage());
+            return redirect()->back()
+                ->withInput()
+                ->with('error', 'Failed to send notification: ' . $e->getMessage());
+        }
+    }
+}

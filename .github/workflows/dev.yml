@@ -1,0 +1,172 @@
+name: Dev Deploy Pioneertrips
+
+on:
+  push:
+    branches: [dev]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: fassla-software
+          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/fassla-software/pioneertrips-backend
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=dev-
+            type=raw,value=dev,enable={{is_default_branch}}
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Debug - Check secrets (masked)
+        run: |
+          echo "SSH_HOST is set: $([ -n '${{ secrets.SSH_HOST }}' ] && echo 'YES' || echo 'NO')"
+          echo "SSH_USER is set: $([ -n '${{ secrets.SSH_USER }}' ] && echo 'YES' || echo 'NO')"
+          echo "SSH_PASSWORD is set: $([ -n '${{ secrets.SSH_PASSWORD }}' ] && echo 'YES' || echo 'NO')"
+          echo "SSH_KEY is set: $([ -n '${{ secrets.SSH_KEY }}' ] && echo 'YES' || echo 'NO')"
+      
+      - name: SSH to server & deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            cd /var/www/pioneertrips-dev
+            # Ensure required directories exist
+            mkdir -p docker/nginx docker/php storage bootstrap/cache backups
+
+            # Remove old nginx config if it exists
+            rm -f docker/nginx/default.conf
+
+            # Create fresh nginx config
+            cat > docker/nginx/default.conf << 'EOF'
+            server {
+                listen 80;
+                server_name _;
+
+                root /var/www/html/public;
+                index index.php;
+
+                client_max_body_size 100M;
+
+                location ^~ /storage/app/public/ {
+                    alias /var/www/html/storage/app/public/;
+                    try_files $uri =404;
+                    access_log off;
+                    log_not_found off;
+                    expires 30d;
+                }
+
+                location ^~ /storage/ {
+                    alias /var/www/html/storage/app/public/;
+                    try_files $uri =404;
+                    access_log off;
+                    log_not_found off;
+                    expires 30d;
+                }
+
+                location ^~ /public/ {
+                    alias /var/www/html/public/;
+                    try_files $uri $uri/ =404;
+                    access_log off;
+                    log_not_found off;
+                    expires 30d;
+                }
+
+                location ~* \.(?:css|js|png|jpg|jpeg|gif|ico|svg|woff2?|eot|ttf|otf|mp4|webp|json|xml)$ {
+                    root /var/www/html/public;
+                    try_files $uri =404;
+                    access_log off;
+                    log_not_found off;
+                    expires 30d;
+                    add_header Cache-Control "public, immutable";
+                }
+
+                location / {
+                    try_files $uri $uri/ /index.php?$query_string;
+                }
+
+                location ~ \.php$ {
+                    fastcgi_pass app:9000;
+                    fastcgi_index index.php;
+                    fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+                    include fastcgi_params;
+                }
+
+                location ~ /\.(?!well-known).* {
+                    deny all;
+                }
+            }
+            EOF
+            chmod 644 docker/nginx/default.conf
+
+            # Pull image from GHCR
+            docker pull ghcr.io/fassla-software/pioneertrips-backend:dev
+
+            # Stop old containers
+            docker-compose -f docker-compose.dev.yml down || true
+
+            # Start containers
+            docker-compose -f docker-compose.dev.yml up -d
+
+            # Wait and create storage link
+            sleep 5
+            docker-compose -f docker-compose.dev.yml exec -T app php artisan storage:link || true
+
+            # Update APP_URL and ASSET_URL
+            DEV_URL="https://devpioneertrips.duckdns.org"
+            cp .env .env.backup || true
+            if grep -q "^APP_URL=" .env; then
+              sed -i "s|^APP_URL=.*|APP_URL=${DEV_URL}|" .env
+            else
+              echo "APP_URL=${DEV_URL}" >> .env
+            fi
+            if grep -q "^ASSET_URL=" .env; then
+              sed -i "s|^ASSET_URL=.*|ASSET_URL=${DEV_URL}|" .env
+            else
+              echo "ASSET_URL=${DEV_URL}" >> .env
+            fi
+
+            # Copy .env into container and restart app
+            docker cp .env pioneer_app_dev:/var/www/html/.env || true
+            docker-compose -f docker-compose.dev.yml restart app || true
+
+            # Clear Laravel caches
+            docker-compose -f docker-compose.dev.yml exec -T app php artisan config:clear || true
+            docker-compose -f docker-compose.dev.yml exec -T app php artisan cache:clear || true
+            docker-compose -f docker-compose.dev.yml exec -T app php artisan view:clear || true
+            docker-compose -f docker-compose.dev.yml exec -T app php artisan route:clear || true
+            docker-compose -f docker-compose.dev.yml exec -T app php artisan optimize:clear || true
+
+            # Delete compiled views
+            docker-compose -f docker-compose.dev.yml exec -T app find /var/www/html/storage/framework/views -name "*.php" -delete || true
