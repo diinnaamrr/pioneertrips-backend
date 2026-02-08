@@ -1,6 +1,8 @@
+version: "3.8"
+
 services:
   app:
-    image: ghcr.io/fassla-software/pioneertrips-backend:dev
+    image: ghcr.io/diinnaamrr/pioneertrips-backend:dev
     container_name: pioneer_app_dev
     restart: unless-stopped
     working_dir: /var/www/html
