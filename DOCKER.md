@@ -66,6 +66,24 @@ This guide will help you set up and run the Laravel application using Docker.
 - **MySQL Database**: localhost:3306
 - **Redis**: localhost:6379
 
+## Dev Environment (Pioneer Trips)
+
+للبيئة التطويرية باستخدام صورة GHCR و nginx مخصّص للـ dev:
+
+- **محلي**: http://127.0.0.1:8020  
+- **سيرفر (دومين)**: https://devpioneertrips.duckdns.org  
+
+```bash
+# تشغيل الـ dev
+docker-compose -f docker-compose.dev.yml up -d
+
+# إيقاف
+docker-compose -f docker-compose.dev.yml down
+```
+
+في الـ dev يُستخدم ملف `docker/nginx/default-dev.conf` (يدعم 127.0.0.1 و devpioneertrips.duckdns.org و الـ reverse proxy للـ HTTPS).  
+تأكد من ضبط `.env` على السيرفر: `APP_URL=https://devpioneertrips.duckdns.org` (الـ workflow يضبطها تلقائياً).
+
 ## Common Commands
 
 ### Start containers

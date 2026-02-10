@@ -63,73 +63,13 @@ jobs:
           script: |
             cd /var/www/pioneertrips-dev
 
+            # Pull latest code (docker-compose.dev.yml + docker/nginx/default-dev.conf)
+            git pull origin dev || true
+
             # Create necessary directories
             mkdir -p docker/nginx docker/php storage bootstrap/cache backups
 
-            # Remove old nginx config
-            rm -f docker/nginx/default.conf
-
-            # Create fresh nginx config
-            cat > docker/nginx/default.conf << 'EOF'
-            server {
-                listen 80;
-                server_name _;
-
-                root /var/www/html/public;
-                index index.php;
-
-                client_max_body_size 100M;
-
-                location ^~ /storage/app/public/ {
-                    alias /var/www/html/storage/app/public/;
-                    try_files $uri =404;
-                    access_log off;
-                    log_not_found off;
-                    expires 30d;
-                }
-
-                location ^~ /storage/ {
-                    alias /var/www/html/storage/app/public/;
-                    try_files $uri =404;
-                    access_log off;
-                    log_not_found off;
-                    expires 30d;
-                }
-
-                location ^~ /public/ {
-                    alias /var/www/html/public/;
-                    try_files $uri $uri/ =404;
-                    access_log off;
-                    log_not_found off;
-                    expires 30d;
-                }
-
-                location ~* \.(?:css|js|png|jpg|jpeg|gif|ico|svg|woff2?|eot|ttf|otf|mp4|webp|json|xml)$ {
-                    root /var/www/html/public;
-                    try_files $uri =404;
-                    access_log off;
-                    log_not_found off;
-                    expires 30d;
-                    add_header Cache-Control "public, immutable";
-                }
-
-                location / {
-                    try_files $uri $uri/ /index.php?$query_string;
-                }
-
-                location ~ \.php$ {
-                    fastcgi_pass app:9000;
-                    fastcgi_index index.php;
-                    fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
-                    include fastcgi_params;
-                }
-
-                location ~ /\.(?!well-known).* {
-                    deny all;
-                }
-            }
-            EOF
-            chmod 644 docker/nginx/default.conf
+            # Nginx config: repo's default-dev.conf is used via docker-compose.dev.yml
 
             # Pull latest image from GHCR
             docker pull ghcr.io/diinnaamrr/pioneertrips-backend:dev
