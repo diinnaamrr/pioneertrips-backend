@@ -6,7 +6,7 @@
                 
                 <h1 class="fw-bold text-white mb-3 animate__animated animate__fadeInDown animate__delay-1s">
                     move smarter , Deliver Faster with
-                    <span class="wayak-span">Wayak</span>
+                    <span class="wayak-span">el 3arby</span>
                 </h1>
 
                 <p class="text-light mb-4 animate__animated animate__fadeInUp animate__delay-2s">
