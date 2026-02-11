@@ -3,7 +3,7 @@
     $secondary_color = '#FF7D2E'; // Wayak Orange
     
     // Fallback Data (as previously defined)
-    $email = 'wayak@gmail.com';
+    $email = 'el3araby@gmail.com';
     $contactNumber = '01200924442';
     $businessAddress = 'Fifth settlement , New cairo , Egypt .';
 @endphp

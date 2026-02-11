@@ -5,7 +5,7 @@
             {{-- Text Content --}}
             <div class="col-12 col-lg-6 order-2 order-lg-1" data-aos="fade-right">
                 <h2 class="fw-bold text-primary mb-3">
-                    Drive with <span class="wayak-span">Wayak</span> & Earn Money!
+                    Drive with <span class="wayak-span">el3araby</span> & Earn Money!
                 </h2>
 
                 <p class="text-secondary fs-5 mb-4">

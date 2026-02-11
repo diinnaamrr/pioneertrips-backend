@@ -7,10 +7,10 @@
 
     // Dynamic data retrieval with safe fallback initialization
     $footerLogo = getSession('footer_logo');
-    $email = getSession('business_contact_email') ?: 'wayak@gmail.com';
+    $email = getSession('business_contact_email') ?: 'el3araby@gmail.com';
     $contactNumber = getSession('business_contact_phone') ?: '01200924442';
     $businessAddress = getSession('business_address') ?: 'Fifth settlement , New cairo , Egypt .';
-    $businessName = getSession('business_name') ?: 'Wayak';
+    $businessName = getSession('business_name') ?: 'el3araby';
     $cta = getSession('cta');
     $copyrightText = getSession('copyright_text');
     
@@ -22,7 +22,7 @@
         $links = collect();
     }
     
-    $wayak_description = 'Wayak is your next-generation Egyptian ride-hailing and parcel delivery application, offering flexible pricing, driver selection, and secure payment options via Instapay and cards. We connect users and captains through a reliable and rewarding platform.';
+    $wayak_description = 'el3araby is your next-generation Egyptian ride-hailing and parcel delivery application, offering flexible pricing, driver selection, and secure payment options via Instapay and cards. We connect users and captains through a reliable and rewarding platform.';
 @endphp
 
 <footer class="text-white py-5 footer-gradient-bg px-3 px-md-0">

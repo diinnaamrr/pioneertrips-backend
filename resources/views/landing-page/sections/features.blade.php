@@ -3,7 +3,7 @@
 
         {{-- Section Header --}}
         <div class="text-center mb-5">
-            <h2 class="fw-bold text-primary mb-3">Why Choose <span class="wayak-span">Wayak?</span></h2>
+            <h2 class="fw-bold text-primary mb-3">Why Choose <span class="wayak-span">el3araby?</span></h2>
             <p class="text-secondary fs-5 mx-auto" style="max-width:700px;">
                 Wayak combines ride, delivery, and loyalty in one seamless platform. Smart, secure, and rewarding for both users and drivers.
             </p>
