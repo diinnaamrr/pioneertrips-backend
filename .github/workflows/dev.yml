@@ -54,13 +54,17 @@ jobs:
 
       - name: SSH to server & deploy
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           password: ${{ secrets.SSH_PASSWORD }}
           port: ${{ secrets.SSH_PORT || 22 }}
+          envs: GHCR_TOKEN
           script: |
+            set -e
             cd /var/www/pioneertrips-dev
 
             # Pull latest code (docker-compose.dev.yml + docker/nginx/default-dev.conf)
@@ -71,7 +75,12 @@ jobs:
 
             # Nginx config: repo's default-dev.conf is used via docker-compose.dev.yml
 
-            # Pull latest image from GHCR
+            # Login to GHCR so the server can pull the image (required for private images)
+            if [ -n "$GHCR_TOKEN" ]; then
+              echo "$GHCR_TOKEN" | docker login ghcr.io -u diinnaamrr --password-stdin
+            fi
+
+            # Pull latest image from GHCR (fail job if pull fails)
             docker pull ghcr.io/diinnaamrr/pioneertrips-backend:dev
 
             # Stop old containers
