@@ -5,7 +5,7 @@
             <!-- Left Content -->
             <div class="col-lg-6 text-center text-lg-start wow animate__fadeInLeft">
                 <h2 class="fw-bold mb-3 download-title">
-                    Download the <span class="wayak-span">el3araby App</span>
+                    Download the <span class="wayak-span">Wayak App</span>
                 </h2>
 
                 <p class="text-light mb-4 download-text">
